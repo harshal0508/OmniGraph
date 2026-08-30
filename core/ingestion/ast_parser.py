@@ -228,6 +228,39 @@ class ASTParser:
                     start_line=line,
                 ))
 
+        elif node.type == "call":
+            func_node = node.child_by_field_name("function")
+            if func_node:
+                method_name = None
+                table_name = None
+                is_self = False
+                if func_node.type == "attribute":
+                    method_node = func_node.child_by_field_name("attribute")
+                    obj_node = func_node.child_by_field_name("value") or func_node.child_by_field_name("object")
+                    if method_node:
+                        method_name = method_node.text.decode("utf-8", errors="ignore")
+                    if obj_node:
+                        table_name = obj_node.text.decode("utf-8", errors="ignore")
+                        if table_name == "self":
+                            is_self = True
+                            table_name = None
+                        else:
+                            table_name = table_name.lower()
+                elif func_node.type == "identifier":
+                    method_name = func_node.text.decode("utf-8", errors="ignore")
+                
+                if method_name:
+                    lang = result.language
+                    line = node.start_point[0] + 1
+                    self._resolve_and_add_edge(method_name, lang, result, line, current_func_id, orm_model=table_name)
+                    if method_name in ("query", "execute", "raw"):
+                        self._extract_sql_from_call(node, source, result, line, current_func_id)
+                    if current_func_id:
+                        if func_node.type == "identifier" or is_self:
+                            from pathlib import Path
+                            module_name = Path(result.source_file).stem
+                            result.local_calls.append((current_func_id, method_name, line, is_self, current_class, module_name))
+
         elif node.type == "call_expression":
             func_node = node.child_by_field_name("function")
             if func_node:
