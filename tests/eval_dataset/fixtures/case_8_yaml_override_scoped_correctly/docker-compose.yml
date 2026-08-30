@@ -1,0 +1,9 @@
+﻿services:
+  payment_service:
+    image: python:3.9
+    environment:
+      - DATABASE_URL=postgres://postgres
+  inventory_service:
+    image: python:3.9
+    environment:
+      - DATABASE_URL=postgres://postgres

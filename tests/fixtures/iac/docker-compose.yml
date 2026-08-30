@@ -1,0 +1,38 @@
+# docker-compose.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# FIXTURE: Docker Compose for local dev.
+# Note: replicas=1 here (dev). Production K8s has replicas=5.
+# OmniGraph should warn about config environment ambiguity (EC-10).
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+  vulnerable_python:
+    build: ./vulnerable_python
+    deploy:
+      replicas: 1
+    environment:
+      - FRAMEWORK=django
+      - DB_HOST=postgres
+
+  vulnerable_js:
+    build: ./vulnerable_js
+    deploy:
+      replicas: 1
+    environment:
+      - DB_HOST=postgres
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: omnigraph_demo
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"

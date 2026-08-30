@@ -1,0 +1,2 @@
+class Cart:
+    objects = None

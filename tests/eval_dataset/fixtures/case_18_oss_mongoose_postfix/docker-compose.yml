@@ -1,0 +1,5 @@
+services:
+  route:
+    image: node:18
+    environment:
+      - DATABASE_URL=mongodb://db

@@ -1,0 +1,120 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wallet-service
+  labels:
+    app: wallet
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: wallet
+  template:
+    metadata:
+      labels:
+        app: wallet
+    spec:
+      containers:
+        - name: wallet-service
+          image: myorg/wallet:latest
+          env:
+            - name: REDIS_URL
+              value: redis://redis-service:6379
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  labels:
+    app: orders
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orders
+  template:
+    metadata:
+      labels:
+        app: orders
+    spec:
+      containers:
+        - name: order-service
+          image: myorg/orders:latest
+          env:
+            - name: DB_HOST
+              value: postgres-service
+            - name: FRAMEWORK
+              value: django
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vulnerable-js
+  labels:
+    app: payment-notification
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: vulnerable-js
+  template:
+    metadata:
+      labels:
+        app: vulnerable-js
+    spec:
+      containers:
+        - name: app
+          image: node:20-alpine
+          env:
+            - name: DB_HOST
+              value: postgres-service
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_DB
+              value: omnigraph_demo
+            - name: POSTGRES_ISOLATION_LEVEL
+              value: READ_COMMITTED
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-service
+  labels:
+    app: inventory
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventory
+  template:
+    metadata:
+      labels:
+        app: inventory
+    spec:
+      containers:
+        - name: app
+          image: myorg/inventory:latest
+          env:
+            - name: DB_HOST
+              value: postgres-service

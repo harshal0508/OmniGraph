@@ -1,0 +1,5 @@
+﻿services:
+  order_service:
+    image: node:18
+  fraud_service:
+    image: python:3.9

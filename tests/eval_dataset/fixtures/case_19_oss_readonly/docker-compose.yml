@@ -1,0 +1,5 @@
+services:
+  rooms:
+    image: python:3.10
+    environment:
+      - DATABASE_URL=postgres://db

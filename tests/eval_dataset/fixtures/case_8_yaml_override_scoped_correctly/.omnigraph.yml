@@ -1,0 +1,7 @@
+﻿overrides_by_service:
+  svc_payment_service:
+    db_ref: postgres
+    identity: shared_prod_payments_db
+  svc_inventory_service:
+    db_ref: postgres
+    identity: shared_prod_inventory_db

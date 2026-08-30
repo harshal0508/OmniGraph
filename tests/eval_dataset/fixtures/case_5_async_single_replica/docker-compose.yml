@@ -1,0 +1,9 @@
+﻿services:
+  async_svc:
+    image: node:18
+    environment:
+      - DATABASE_URL=postgres://postgres
+    deploy:
+      replicas: 1
+  postgres:
+    image: postgres:15

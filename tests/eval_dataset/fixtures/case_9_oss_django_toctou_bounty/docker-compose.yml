@@ -1,0 +1,5 @@
+services:
+  bounty_api:
+    image: python:3.9
+    environment:
+      - DATABASE_URL=postgres://db

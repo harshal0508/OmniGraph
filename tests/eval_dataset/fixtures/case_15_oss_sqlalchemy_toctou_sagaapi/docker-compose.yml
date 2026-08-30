@@ -1,0 +1,5 @@
+services:
+  registrations:
+    image: python:3.10
+    environment:
+      - DATABASE_URL=postgresql://db

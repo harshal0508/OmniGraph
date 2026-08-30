@@ -1,0 +1,5 @@
+﻿database_identities:
+  db_unknown_svc_order_service:
+    identity: shared_prod_orders_db
+  db_unknown_svc_fraud_service:
+    identity: shared_prod_orders_db

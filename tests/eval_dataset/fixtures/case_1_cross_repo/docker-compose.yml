@@ -1,0 +1,15 @@
+services:
+  order_service:
+    image: python:3.9
+    environment:
+      - DATABASE_URL=postgres://postgres
+    deploy:
+      replicas: 1
+  fulfillment_service:
+    image: node:18
+    environment:
+      - DB_HOST=postgres
+    deploy:
+      replicas: 1
+  postgres:
+    image: postgres:15

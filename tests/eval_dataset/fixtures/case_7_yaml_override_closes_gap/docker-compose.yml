@@ -1,0 +1,9 @@
+﻿services:
+  order_service:
+    image: node:18
+    environment:
+      - DATABASE_URL=$DB_URL
+  fraud_service:
+    image: node:18
+    environment:
+      - DATABASE_URL=$DB_URL

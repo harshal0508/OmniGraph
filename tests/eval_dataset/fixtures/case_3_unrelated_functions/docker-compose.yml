@@ -1,0 +1,9 @@
+﻿services:
+  worker_service:
+    image: python:3.9
+    environment:
+      - DATABASE_URL=postgres://postgres
+    deploy:
+      replicas: 2
+  postgres:
+    image: postgres:15

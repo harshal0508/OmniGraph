@@ -1,0 +1,5 @@
+services:
+  wallet_atomic_service:
+    image: node:18
+    environment:
+      - DATABASE_URL=postgres://db
