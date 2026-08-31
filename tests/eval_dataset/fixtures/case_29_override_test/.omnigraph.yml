@@ -1,0 +1,5 @@
+﻿overrides_by_service:
+  svc_a:
+    identity: db_shared_override
+  svc_b:
+    identity: db_shared_override

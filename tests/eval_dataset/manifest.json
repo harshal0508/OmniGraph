@@ -1,317 +1,328 @@
 {
-  "cases": [
-    {
-      "id": "case_1_cross_repo_positive",
-      "category": "cross_service_race",
-      "description": "Two distinct services concurrently writing to the same table.",
-      "expected_target": "table_db_postgres_table_order",
-      "expected_actors": [
-        "svc_order_service",
-        "svc_fulfillment_service"
-      ],
-      "expected_findings": {
-        "cross_service": true,
-        "tier_1": false,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_2_safe_append_negative",
-      "category": "safe_insert",
-      "description": "A single service with replicas > 1 writing to a table safely (no read phase, no TOCTOU).",
-      "expected_target": "table_db_postgres_table_logs",
-      "expected_actors": [],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_3_unrelated_functions",
-      "category": "self_race",
-      "description": "Reads in one function, writes in another. Not a TOCTOU (Tier 1 Negative), but structurally a cross-function race (Tier 2 Positive).",
-      "expected_target": "table_db_postgres_table_order",
-      "expected_actors": [
-        "svc_worker_service"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": true
-      }
-    },
-    {
-      "id": "case_4_cross_function_race",
-      "category": "cross_function_same_service",
-      "description": "Two different functions in the same service independently read and write the same table.",
-      "expected_target": "table_db_postgres_table_account",
-      "expected_actors": [
-        "svc_bank_service"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": true,
-        "tier_2": true
-      }
-    },
-    {
-      "id": "case_5_async_single_replica",
-      "category": "self_race",
-      "description": "A single-replica NodeJS service with an async read-then-write in one function. Demonstrates EC-6.",
-      "expected_target": "table_db_postgres_table_order",
-      "expected_actors": [
-        "svc_async_svc"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": true,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_6_unresolvable_db_isolation",
-      "category": "cross_service_race",
-      "description": "Two services write to 'orders' but lack DB connection strings. Should isolate as a fail-safe.",
-      "expected_target": "table_db_unknown_svc_order_service_table_order",
-      "expected_actors": [],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_7_yaml_override_closes_gap",
-      "category": "cross_service_race",
-      "description": "Two services with unresolvable DBs (would normally isolate) are manually merged via .omnigraph.yml",
-      "expected_target": "table_shared_prod_orders_db_table_order",
-      "expected_actors": [
-        "svc_order_service",
-        "svc_fraud_service"
-      ],
-      "expected_findings": {
-        "cross_service": true,
-        "tier_1": false,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_8_yaml_override_scoped_correctly",
-      "category": "safe_insert",
-      "description": "Two services share the literal 'postgres' alias, but .omnigraph.yml scoped overrides explicitly isolate them.",
-      "expected_target": "table_shared_prod_payments_db_table_order",
-      "expected_actors": [],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_9_oss_django_toctou_bounty",
-      "category": "single_service_race",
-      "description": "OSS Django Tier 1 TOCTOU: missing select_for_update in Bounty claim view (Open-Source-Contribution-Atelier #2575).",
-      "expected_target": "table_db_db_table_bounty",
-      "expected_actors": [
-        "svc_bounty_api"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": true,
-        "tier_2": true
-      }
-    },
-    {
-      "id": "case_10_oss_django_toctou_otis",
-      "category": "single_service_race",
-      "description": "OSS Django Tier 1 TOCTOU: missing select_for_update in OIMEFight give_up view (vEnhance/otis-web #544).",
-      "expected_target": "table_db_db_table_oimefight",
-      "expected_actors": [
-        "svc_views"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": true,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_11_oss_sequelize_toctou_aashray",
-      "category": "cross_function_same_service",
-      "description": "OSS Sequelize Tier 2 TOCTOU: missing lock in findRoom vs createRoomBooking (SRATRC/aashray-backend #343).",
-      "expected_target": "table_db_db_table_room_booking",
-      "expected_actors": [
-        "svc_booking_service"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": true
-      }
-    },
-    {
-      "id": "case_12_oss_prisma_toctou_orions",
-      "category": "cross_function_same_service",
-      "description": "OSS Prisma Tier 2 TOCTOU: missing lock in roleFor vs POST (richard-callis/orions-rigel #26).",
-      "expected_target": "table_db_db_table_user",
-      "expected_actors": [
-        "svc_route"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": true
-      }
-    },
-    {
-      "id": "case_13_oss_typeorm_toctou_nexafx",
-      "category": "single_function_race",
-      "description": "OSS TypeORM Tier 1 TOCTOU: missing pessimistic_write lock in deductBalanceSafely (Nexacore-Org/NexaFx-backend #979).",
-      "expected_target": "table_db_db_table_wallet",
-      "expected_actors": [
-        "svc_wallet_service"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": true,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_14_oss_mongoose_toctou_swiftcart",
-      "category": "single_function_race",
-      "description": "OSS Mongoose Tier 1 TOCTOU: findOne then save missing atomic updates (aihridoy/swiftcart #58).",
-      "expected_target": "table_db_db_table_cart",
-      "expected_actors": [
-        "svc_route"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": true,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_15_oss_sqlalchemy_toctou_sagaapi",
-      "category": "cross_function_same_service",
-      "description": "OSS SQLAlchemy Tier 2 TOCTOU: find promo then commit usage missing atomic update (muk2/SagaApi #42).",
-      "expected_target": "table_db_db_table_event_promo_code",
-      "expected_actors": [
-        "svc_registrations"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": true
-      }
-    },
-    {
-      "id": "case_16_oss_typeorm_postfix",
-      "category": "single_function_race",
-      "description": "OSS TypeORM Post-Fix: uses startTransaction which resolves to USES_TRANSACTION. (Nexacore-Org/NexaFx-backend #979).",
-      "expected_target": "table_db_db_table_wallet",
-      "expected_actors": [
-        "svc_wallet_atomic_service"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_17_oss_django_crud",
-      "category": "cross_function_same_service",
-      "description": "OSS Django Negative: standard safe CRUD. get_profile (read) and update_profile (write). FPs on Tier 2. (vEnhance/otis-web).",
-      "expected_target": "table_db_db_table_user_profile",
-      "expected_actors": [
-        "svc_views"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": true,
-        "tier_2": true
-      }
-    },
-    {
-      "id": "case_18_oss_mongoose_postfix",
-      "category": "single_function_race",
-      "description": "OSS Mongoose Post-Fix: findOneAndUpdate atomic operation. (aihridoy/swiftcart #58).",
-      "expected_target": "table_db_db_table_cart",
-      "expected_actors": [
-        "svc_route"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_19_oss_readonly",
-      "category": "single_function_race",
-      "description": "OSS SQLAlchemy Negative: only reads. (SRATRC/aashray-backend).",
-      "expected_target": "table_db_db_table_room",
-      "expected_actors": [
-        "svc_rooms"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": false
-      }
-    },
-    {
-      "id": "case_20_oss_appendonly",
-      "category": "single_function_race",
-      "description": "OSS SQLAlchemy Negative: append only writes. (muk2/SagaApi).",
-      "expected_target": "table_db_db_table_audit_log",
-      "expected_actors": [
-        "svc_audit"
-      ],
-      "expected_findings": {
-        "cross_service": false,
-        "tier_1": false,
-        "tier_2": true
-      }
-    },
-    {
-      "id": "case_21_adversarial_generic_names",
-      "tier_1": false,
-      "tier_2": true
-    },
-    {
-      "id": "case_22_adversarial_misleading_names",
-      "tier_1": false,
-      "tier_2": true
-    },
-    {
-      "id": "case_23_adversarial_non_english",
-      "tier_1": false,
-      "tier_2": true
-    },
-    {
-      "id": "case_24_severity_cosmetic",
-      "tier_1": false,
-      "tier_2": true
-    },
-    {
-      "id": "case_25_severity_financial",
-      "tier_1": false,
-      "tier_2": true
-    },
-    {
-      "id": "case_26_cross_file_calls",
-      "expected_verdict": "true_positive",
-      "expected_severity": "high",
-      "description": "cross-file TOCTOU"
-    },
-    {
-      "id": "case_27_same_name_different_class",
-      "expected_verdict": "true_positive",
-      "expected_severity": "high",
-      "description": "same name different class"
-    }
-  ]
+    "cases": [
+        {
+            "id": "case_1_cross_repo_positive",
+            "category": "cross_service_race",
+            "description": "Two distinct services concurrently writing to the same table.",
+            "expected_target": "table_db_postgres_table_order",
+            "expected_actors": [
+                "svc_order_service",
+                "svc_fulfillment_service"
+            ],
+            "expected_findings": {
+                "cross_service": true,
+                "tier_1": false,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_2_safe_append_negative",
+            "category": "safe_insert",
+            "description": "A single service with replicas > 1 writing to a table safely (no read phase, no TOCTOU).",
+            "expected_target": "table_db_postgres_table_logs",
+            "expected_actors": [],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_3_unrelated_functions",
+            "category": "self_race",
+            "description": "Reads in one function, writes in another. Not a TOCTOU (Tier 1 Negative), but structurally a cross-function race (Tier 2 Positive).",
+            "expected_target": "table_db_postgres_table_order",
+            "expected_actors": [
+                "svc_worker_service"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": true
+            }
+        },
+        {
+            "id": "case_4_cross_function_race",
+            "category": "cross_function_same_service",
+            "description": "Two different functions in the same service independently read and write the same table.",
+            "expected_target": "table_db_postgres_table_account",
+            "expected_actors": [
+                "svc_bank_service"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": true,
+                "tier_2": true
+            }
+        },
+        {
+            "id": "case_5_async_single_replica",
+            "category": "self_race",
+            "description": "A single-replica NodeJS service with an async read-then-write in one function. Demonstrates EC-6.",
+            "expected_target": "table_db_postgres_table_order",
+            "expected_actors": [
+                "svc_async_svc"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": true,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_6_unresolvable_db_isolation",
+            "category": "cross_service_race",
+            "description": "Two services write to 'orders' but lack DB connection strings. Should isolate as a fail-safe.",
+            "expected_target": "table_db_unknown_svc_order_service_table_order",
+            "expected_actors": [],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_7_yaml_override_closes_gap",
+            "category": "cross_service_race",
+            "description": "Two services with unresolvable DBs (would normally isolate) are manually merged via .omnigraph.yml",
+            "expected_target": "table_shared_prod_orders_db_table_order",
+            "expected_actors": [
+                "svc_order_service",
+                "svc_fraud_service"
+            ],
+            "expected_findings": {
+                "cross_service": true,
+                "tier_1": false,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_8_yaml_override_scoped_correctly",
+            "category": "safe_insert",
+            "description": "Two services share the literal 'postgres' alias, but .omnigraph.yml scoped overrides explicitly isolate them.",
+            "expected_target": "table_shared_prod_payments_db_table_order",
+            "expected_actors": [],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_9_oss_django_toctou_bounty",
+            "category": "single_service_race",
+            "description": "OSS Django Tier 1 TOCTOU: missing select_for_update in Bounty claim view (Open-Source-Contribution-Atelier #2575).",
+            "expected_target": "table_db_db_table_bounty",
+            "expected_actors": [
+                "svc_bounty_api"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": true,
+                "tier_2": true
+            }
+        },
+        {
+            "id": "case_10_oss_django_toctou_otis",
+            "category": "single_service_race",
+            "description": "OSS Django Tier 1 TOCTOU: missing select_for_update in OIMEFight give_up view (vEnhance/otis-web #544).",
+            "expected_target": "table_db_db_table_oimefight",
+            "expected_actors": [
+                "svc_views"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": true,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_11_oss_sequelize_toctou_aashray",
+            "category": "cross_function_same_service",
+            "description": "OSS Sequelize Tier 2 TOCTOU: missing lock in findRoom vs createRoomBooking (SRATRC/aashray-backend #343).",
+            "expected_target": "table_db_db_table_room_booking",
+            "expected_actors": [
+                "svc_booking_service"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": true
+            }
+        },
+        {
+            "id": "case_12_oss_prisma_toctou_orions",
+            "category": "cross_function_same_service",
+            "description": "OSS Prisma Tier 2 TOCTOU: missing lock in roleFor vs POST (richard-callis/orions-rigel #26).",
+            "expected_target": "table_db_db_table_user",
+            "expected_actors": [
+                "svc_route"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": true
+            }
+        },
+        {
+            "id": "case_13_oss_typeorm_toctou_nexafx",
+            "category": "single_function_race",
+            "description": "OSS TypeORM Tier 1 TOCTOU: missing pessimistic_write lock in deductBalanceSafely (Nexacore-Org/NexaFx-backend #979).",
+            "expected_target": "table_db_db_table_wallet",
+            "expected_actors": [
+                "svc_wallet_service"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": true,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_14_oss_mongoose_toctou_swiftcart",
+            "category": "single_function_race",
+            "description": "OSS Mongoose Tier 1 TOCTOU: findOne then save missing atomic updates (aihridoy/swiftcart #58).",
+            "expected_target": "table_db_db_table_cart",
+            "expected_actors": [
+                "svc_route"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": true,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_15_oss_sqlalchemy_toctou_sagaapi",
+            "category": "cross_function_same_service",
+            "description": "OSS SQLAlchemy Tier 2 TOCTOU: find promo then commit usage missing atomic update (muk2/SagaApi #42).",
+            "expected_target": "table_db_db_table_event_promo_code",
+            "expected_actors": [
+                "svc_registrations"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": true
+            }
+        },
+        {
+            "id": "case_16_oss_typeorm_postfix",
+            "category": "single_function_race",
+            "description": "OSS TypeORM Post-Fix: uses startTransaction which resolves to USES_TRANSACTION. (Nexacore-Org/NexaFx-backend #979).",
+            "expected_target": "table_db_db_table_wallet",
+            "expected_actors": [
+                "svc_wallet_atomic_service"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_17_oss_django_crud",
+            "category": "cross_function_same_service",
+            "description": "OSS Django Negative: standard safe CRUD. get_profile (read) and update_profile (write). FPs on Tier 2. (vEnhance/otis-web).",
+            "expected_target": "table_db_db_table_user_profile",
+            "expected_actors": [
+                "svc_views"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": true,
+                "tier_2": true
+            }
+        },
+        {
+            "id": "case_18_oss_mongoose_postfix",
+            "category": "single_function_race",
+            "description": "OSS Mongoose Post-Fix: findOneAndUpdate atomic operation. (aihridoy/swiftcart #58).",
+            "expected_target": "table_db_db_table_cart",
+            "expected_actors": [
+                "svc_route"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_19_oss_readonly",
+            "category": "single_function_race",
+            "description": "OSS SQLAlchemy Negative: only reads. (SRATRC/aashray-backend).",
+            "expected_target": "table_db_db_table_room",
+            "expected_actors": [
+                "svc_rooms"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": false
+            }
+        },
+        {
+            "id": "case_20_oss_appendonly",
+            "category": "single_function_race",
+            "description": "OSS SQLAlchemy Negative: append only writes. (muk2/SagaApi).",
+            "expected_target": "table_db_db_table_audit_log",
+            "expected_actors": [
+                "svc_audit"
+            ],
+            "expected_findings": {
+                "cross_service": false,
+                "tier_1": false,
+                "tier_2": true
+            }
+        },
+        {
+            "id": "case_21_adversarial_generic_names",
+            "tier_1": false,
+            "tier_2": true
+        },
+        {
+            "id": "case_22_adversarial_misleading_names",
+            "tier_1": false,
+            "tier_2": true
+        },
+        {
+            "id": "case_23_adversarial_non_english",
+            "tier_1": false,
+            "tier_2": true
+        },
+        {
+            "id": "case_24_severity_cosmetic",
+            "tier_1": false,
+            "tier_2": true
+        },
+        {
+            "id": "case_25_severity_financial",
+            "tier_1": false,
+            "tier_2": true
+        },
+        {
+            "id": "case_26_cross_file_calls",
+            "expected_verdict": "true_positive",
+            "expected_severity": "high",
+            "description": "cross-file TOCTOU"
+        },
+        {
+            "id": "case_27_same_name_different_class",
+            "expected_verdict": "true_positive",
+            "expected_severity": "high",
+            "description": "same name different class"
+        },
+        {
+            "id": "case_28_tablename_aliasing",
+            "category": "deterministic_aliasing",
+            "description": "Tests __tablename__ deterministic extraction",
+            "expected_collisions": [],
+            "expected_severity": "INFO",
+            "expected_target": "table_user",
+            "expected_actors": [
+                "func_aliasing_test_update_client"
+            ]
+        }
+    ]
 }

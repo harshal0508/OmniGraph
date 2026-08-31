@@ -1,0 +1,10 @@
+﻿__pycache__/
+*.pyc
+logs/
+scratch/
+test_clone*/
+test_contents_dest/
+tmp*/
+.env
+omnigraph-report.html
+omnigraph_report.md

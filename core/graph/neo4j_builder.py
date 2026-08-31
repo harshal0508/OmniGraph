@@ -165,52 +165,63 @@ class Neo4jGraphBuilder:
     def add_parsed_service(self, parsed: ParsedService) -> None:
         """Ingest edges and dynamically create nodes discovered from AST analysis."""
         with self.driver.session() as session:
-            # 1. Ensure the service node exists (even if missing from IaC)
-            query_svc = """
-            MERGE (s:Service {id: $id})
-            ON CREATE SET s.name = $name,
-                          s.language = $language,
-                          s.replica_count = 1,
-                          s.source_file = $source_file,
-                          s.repo_name = $repo_name,
-                          s.branch = $branch,
-                          s.commit_sha = $commit_sha
-            ON MATCH SET s.repo_name = coalesce($repo_name, s.repo_name),
-                         s.branch = coalesce($branch, s.branch),
-                         s.commit_sha = coalesce($commit_sha, s.commit_sha)
-            """
-            session.run(query_svc, id=parsed.service_id, name=parsed.service_name,
-                        language=parsed.language, source_file=parsed.source_file,
-                        repo_name=parsed.repo_name, branch=parsed.branch, commit_sha=parsed.commit_sha)
-            
-            # 2. Add functions
-            for func in parsed.functions:
-                session.execute_write(self._merge_function, func)
-                
-            # 3. Add edges
-            from core.graph.target_resolver import resolve_target
-            
-            for edge in parsed.edges:
-                # Run through the V1 heuristic fallback before inserting to graph
-                resolved_target = resolve_target(edge.target_id, edge.metadata or {})
-                edge.target_id = resolved_target
+            session.execute_write(self._sync_parsed_service_tx, parsed)
 
-                # If target doesn't exist, create a stub node to prevent MATCH failures
-                query_target = """
-                MERGE (t:Table {id: $id})
-                ON CREATE SET t.name = $name
-                ON MATCH SET t.name = coalesce(t.name, $name)
+    def _sync_parsed_service_tx(self, tx, parsed) -> None:
+        # 1. Stale Edge Cleanup (Wipe scope for this service atomically)
+        tx.run("""
+        MATCH (s:Service {id: $service_id})-[:HAS_FUNCTION]->(f:Function)
+        DETACH DELETE f
+        """, service_id=parsed.service_id)
+        
+        tx.run("""
+        MATCH (s:Service {id: $service_id})-[r:WRITES_TO|READS_FROM|USES_LOCK|USES_TRANSACTION|CALLS]->()
+        DELETE r
+        """, service_id=parsed.service_id)
+
+        # 2. Ensure Service Node
+        query_svc = """
+        MERGE (s:Service {id: $id})
+        ON CREATE SET s.name = $name,
+                      s.language = $language,
+                      s.replica_count = 1,
+                      s.source_file = $source_file,
+                      s.repo_name = $repo_name,
+                      s.branch = $branch,
+                      s.commit_sha = $commit_sha
+        ON MATCH SET s.repo_name = coalesce($repo_name, s.repo_name),
+                     s.branch = coalesce($branch, s.branch),
+                     s.commit_sha = coalesce($commit_sha, s.commit_sha)
+        """
+        tx.run(query_svc, id=parsed.service_id, name=parsed.service_name,
+                    language=parsed.language, source_file=parsed.source_file,
+                    repo_name=parsed.repo_name, branch=parsed.branch, commit_sha=parsed.commit_sha)
+
+        # 3. Add functions
+        for func in parsed.functions:
+            self._merge_function(tx, func)
+            
+        # 4. Add edges
+        from core.graph.target_resolver import resolve_target
+        for edge in parsed.edges:
+            resolved_target = resolve_target(edge.target_id, edge.metadata or {})
+            edge.target_id = resolved_target
+
+            query_target = """
+            MERGE (t:Table {id: $id})
+            ON CREATE SET t.name = $name
+            ON MATCH SET t.name = coalesce(t.name, $name)
+            """
+            hint = edge.metadata.get("target_hint")
+            db_id = edge.metadata.get("database_id")
+            tx.run(query_target, id=edge.target_id, name=hint)
+            
+            if db_id:
+                link_query = """
+                MATCH (t:Table {id: $t_id})
+                MATCH (d:Database {id: $d_id})
+                MERGE (t)-[:BELONGS_TO]->(d)
                 """
-                hint = edge.metadata.get("target_hint")
-                db_id = edge.metadata.get("database_id")
-                session.run(query_target, id=edge.target_id, name=hint)
+                tx.run(link_query, t_id=edge.target_id, d_id=db_id)
                 
-                if db_id:
-                    link_query = """
-                    MATCH (t:Table {id: $t_id})
-                    MATCH (d:Database {id: $d_id})
-                    MERGE (t)-[:BELONGS_TO]->(d)
-                    """
-                    session.run(link_query, t_id=edge.target_id, d_id=db_id)
-                    
-                session.execute_write(self._merge_edge, edge)
+            self._merge_edge(tx, edge)

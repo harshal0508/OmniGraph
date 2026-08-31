@@ -73,6 +73,7 @@ class ParsedService:
     commit_sha: Optional[str] = None
     functions: list[FunctionNode] = field(default_factory=list)
     edges: list[GraphEdge] = field(default_factory=list)
+    class_to_table: dict[str, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
     # Tables / datastores referenced — inferred from ORM calls
@@ -198,6 +199,31 @@ class ASTParser:
         # Walk the tree and extract nodes of interest
         self._walk_tree(tree.root_node, source, language, result)
 
+    
+    def _extract_table_name_from_class(self, class_node: "Node") -> Optional[str]:
+        # Python: __tablename__ = 'users'
+        # JS/TS: tableName = 'users' or static get tableName()
+        for child in class_node.children:
+            if child.type == "block" or child.type == "class_body":
+                for stmt in child.children:
+                    # Python assignment: __tablename__ = '...'
+                    if stmt.type == "expression_statement":
+                        assign = stmt.children[0]
+                        if assign.type == "assignment":
+                            left = assign.child_by_field_name("left")
+                            right = assign.child_by_field_name("right")
+                            if left and right and left.text.decode("utf-8") in ("__tablename__", "tableName"):
+                                if right.type in ("string", "string_content"):
+                                    return right.text.decode("utf-8").strip("\"'")
+                    # JS/TS property: tableName = '...'
+                    elif stmt.type == "public_field_definition":
+                        name = stmt.child_by_field_name("name")
+                        val = stmt.child_by_field_name("value")
+                        if name and val and name.text.decode("utf-8") == "tableName":
+                            if val.type in ("string", "string_fragment"):
+                                return val.text.decode("utf-8").strip("\"'")
+        return None
+
     def _walk_tree(
         self,
         node: "Node",
@@ -212,6 +238,10 @@ class ASTParser:
             name_node = node.child_by_field_name("name")
             if name_node:
                 current_class = name_node.text.decode("utf-8")
+                # EXTRACT __tablename__
+                table_name = self._extract_table_name_from_class(node)
+                if table_name:
+                    result.class_to_table[current_class] = table_name
 
         if node.type in ("function_definition", "function_declaration", "arrow_function", "method_definition"):
             name_node = node.child_by_field_name("name")
@@ -244,15 +274,22 @@ class ASTParser:
                         if table_name == "self":
                             is_self = True
                             table_name = None
-                        else:
-                            table_name = table_name.lower()
                 elif func_node.type == "identifier":
                     method_name = func_node.text.decode("utf-8", errors="ignore")
                 
                 if method_name:
                     lang = result.language
                     line = node.start_point[0] + 1
-                    self._resolve_and_add_edge(method_name, lang, result, line, current_func_id, orm_model=table_name)
+                    first_arg = self._extract_first_arg(node)
+                    # Translate class to table if we can!
+                    if table_name:
+                        base_name = table_name.split('.')[0] if '.' in table_name else table_name
+                        if base_name in result.class_to_table:
+                            table_name = result.class_to_table[base_name]
+                    if first_arg and first_arg in result.class_to_table:
+                        first_arg = result.class_to_table[first_arg]
+                        
+                    self._resolve_and_add_edge(method_name, lang, result, line, current_func_id, orm_model=table_name, first_arg=first_arg)
                     if method_name in ("query", "execute", "raw"):
                         self._extract_sql_from_call(node, source, result, line, current_func_id)
                     if current_func_id:
@@ -277,15 +314,21 @@ class ASTParser:
                         if table_name == "this":
                             is_self = True
                             table_name = None
-                        else:
-                            table_name = table_name.lower()
                 elif func_node.type == "identifier":
                     method_name = func_node.text.decode("utf-8", errors="ignore")
 
                 if method_name:
                     lang = result.language
                     line = node.start_point[0] + 1
-                    self._resolve_and_add_edge(method_name, lang, result, line, current_func_id, orm_model=table_name)
+                    first_arg = self._extract_first_arg(node)
+                    if table_name:
+                        base_name = table_name.split('.')[0] if '.' in table_name else table_name
+                        if base_name in result.class_to_table:
+                            table_name = result.class_to_table[base_name]
+                    if first_arg and first_arg in result.class_to_table:
+                        first_arg = result.class_to_table[first_arg]
+                        
+                    self._resolve_and_add_edge(method_name, lang, result, line, current_func_id, orm_model=table_name, first_arg=first_arg)
                     if method_name in ("query", "execute", "raw"):
                         self._extract_sql_from_call(node, source, result, line, current_func_id)
                     if current_func_id:
@@ -297,6 +340,15 @@ class ASTParser:
         for child in node.children:
             self._walk_tree(child, source, language, result, current_func_id, current_class)
 
+    
+    def _extract_first_arg(self, call_node: "Node") -> Optional[str]:
+        args_node = call_node.child_by_field_name("arguments")
+        if args_node:
+            for child in args_node.children:
+                if child.type in ("identifier", "attribute", "identifier"):
+                    return child.text.decode("utf-8", errors="ignore")
+        return None
+
     def _resolve_and_add_edge(
         self,
         method_name: str,
@@ -305,6 +357,7 @@ class ASTParser:
         line: int,
         func_id: Optional[str] = None,
         orm_model: Optional[str] = None,
+        first_arg: Optional[str] = None,
     ) -> None:
         """Resolves a method name to an edge type and appends it to result."""
         edge_type, pattern_name = resolve_method_to_edge(method_name, language)
@@ -324,6 +377,8 @@ class ASTParser:
         meta = {"pattern": pattern_name, "method": method_name}
         if orm_model:
             meta["orm_model"] = orm_model
+        if first_arg:
+            meta["first_arg"] = first_arg
 
         result.edges.append(GraphEdge(
             source_id=func_id or result.service_id,
