@@ -6,7 +6,6 @@ Replaces the in-memory NetworkX builder for cross-repo persistence (OmniGraph v2
 """
 
 from __future__ import annotations
-from typing import Any
 from neo4j import GraphDatabase
 
 from core.schema import (
@@ -14,11 +13,13 @@ from core.schema import (
 )
 from core.ingestion.ast_parser import ParsedService
 from core.ingestion.iac_parser import IaCParseResult
+from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+
 
 class Neo4jGraphBuilder:
-    def __init__(self, uri: str = "bolt://localhost:7687", user: str = "neo4j", password: str = "omnigraph_secret_123"):
+    def __init__(self, uri: str = NEO4J_URI, user: str = NEO4J_USER, password: str = NEO4J_PASSWORD):
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
-        
+
     def initialize_schema(self):
         """Creates uniqueness constraints to ensure MERGE idempotency across repos."""
         with self.driver.session() as session:
@@ -71,7 +72,7 @@ class Neo4jGraphBuilder:
                      t.database_id = coalesce(t.database_id, $database_id)
         """
         tx.run(query, id=node.id, name=node.name, database_id=node.database_id)
-        
+
         # Link to DB
         link_query = """
         MATCH (t:Table {id: $t_id})
@@ -90,7 +91,7 @@ class Neo4jGraphBuilder:
         tx.run(query, id=node.id, name=node.name, broker_type=node.broker_type,
                consumer_count=node.consumer_count)
 
-    def _merge_function(self, tx, node: FunctionNode):
+    def _merge_function(self, tx, node):
         query = """
         MERGE (f:Function {id: $id})
         SET f.name = $name,
@@ -105,7 +106,7 @@ class Neo4jGraphBuilder:
         tx.run(query, id=node.id, name=node.name, service_id=node.service_id,
                source_file=node.source_file, start_line=node.start_line, end_line=node.end_line,
                repo_name=node.repo_name, branch=node.branch, commit_sha=node.commit_sha)
-               
+
         # Wire it to the parent service
         link_query = """
         MATCH (s:Service {id: $s_id})
@@ -115,10 +116,6 @@ class Neo4jGraphBuilder:
         tx.run(link_query, s_id=node.service_id, f_id=node.id)
 
     def _merge_edge(self, tx, edge: GraphEdge):
-        # We use apoc.create.relationship if dynamic relationship types are needed,
-        # but in standard cypher we must construct the string for the rel type securely
-        # Since EdgeType is an Enum with safe strings, we can string-format the type.
-        
         rel_type = edge.edge_type.value
         query = f"""
         MATCH (source {{id: $source_id}})
@@ -135,8 +132,8 @@ class Neo4jGraphBuilder:
                source_file=edge.source_file or "", source_line=edge.source_line or 0,
                pattern=edge.metadata.get("pattern", ""),
                repo_name=edge.repo_name, branch=edge.branch, commit_sha=edge.commit_sha)
-               
-        # Service-level auto-aggregation: if source is a function, mirror edge to the parent service
+
+        # Service-level auto-aggregation: mirror edge to the parent service
         agg_query = f"""
         MATCH (s:Service)-[:HAS_FUNCTION]->(f:Function {{id: $source_id}})
         MATCH (target {{id: $target_id}})
@@ -151,7 +148,7 @@ class Neo4jGraphBuilder:
                 session.execute_write(self._merge_service, svc)
             for db in iac.databases:
                 session.execute_write(self._merge_database, db)
-                
+
                 # Auto-generate a default table for the database so edges have a target
                 table = TableNode(
                     id=f"table_{db.id}_default",
@@ -173,7 +170,7 @@ class Neo4jGraphBuilder:
         MATCH (s:Service {id: $service_id})-[:HAS_FUNCTION]->(f:Function)
         DETACH DELETE f
         """, service_id=parsed.service_id)
-        
+
         tx.run("""
         MATCH (s:Service {id: $service_id})-[r:WRITES_TO|READS_FROM|USES_LOCK|USES_TRANSACTION|CALLS]->()
         DELETE r
@@ -194,13 +191,13 @@ class Neo4jGraphBuilder:
                      s.commit_sha = coalesce($commit_sha, s.commit_sha)
         """
         tx.run(query_svc, id=parsed.service_id, name=parsed.service_name,
-                    language=parsed.language, source_file=parsed.source_file,
-                    repo_name=parsed.repo_name, branch=parsed.branch, commit_sha=parsed.commit_sha)
+               language=parsed.language, source_file=parsed.source_file,
+               repo_name=parsed.repo_name, branch=parsed.branch, commit_sha=parsed.commit_sha)
 
         # 3. Add functions
         for func in parsed.functions:
             self._merge_function(tx, func)
-            
+
         # 4. Add edges
         from core.graph.target_resolver import resolve_target
         for edge in parsed.edges:
@@ -215,7 +212,7 @@ class Neo4jGraphBuilder:
             hint = edge.metadata.get("target_hint")
             db_id = edge.metadata.get("database_id")
             tx.run(query_target, id=edge.target_id, name=hint)
-            
+
             if db_id:
                 link_query = """
                 MATCH (t:Table {id: $t_id})
@@ -223,5 +220,5 @@ class Neo4jGraphBuilder:
                 MERGE (t)-[:BELONGS_TO]->(d)
                 """
                 tx.run(link_query, t_id=edge.target_id, d_id=db_id)
-                
+
             self._merge_edge(tx, edge)

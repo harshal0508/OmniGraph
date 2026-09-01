@@ -2,8 +2,6 @@ import os
 import sys
 import json
 import argparse
-from dotenv import load_dotenv
-load_dotenv()
 from pathlib import Path
 from datetime import datetime
 
@@ -122,7 +120,7 @@ def merge_pr(repo_path: str, service_id: str, dry_run: bool = True):
         sys.exit(1)
         
     print("\nMerging into Neo4j...")
-    db = Neo4jGraphBuilder("bolt://localhost:7687", "neo4j", "omnigraph_secret_123")
+    db = Neo4jGraphBuilder()
     for svc in valid_services:
         db.add_parsed_service(svc)
     db.close()
