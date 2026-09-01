@@ -67,32 +67,70 @@ scripts/check_listener.py - PR-check polling daemon (read-only)
 scripts/merge_listener.py - merge-trigger polling daemon (write path)
 ```
 
-## Setup
+## Deployment
 
-**Prerequisites:** Docker, Python 3.10+, a GitHub personal access token scoped to the repos you want to connect (Contents: read, Pull requests: read/write).
+OmniGraph has two distinct deployment modes with different capabilities. Understanding the boundary before you install either is important.
+
+---
+
+### Option A — GitHub Action (single-repo detection)
+
+**What it does:** Scans the repository it runs in. Detects TOCTOU loops, missing distributed locks, non-idempotent retries, and Redis non-atomic read-modify-write patterns within that single codebase. Posts findings as a PR comment. No external infrastructure required.
+
+**What it does not do:** Cross-repo detection — it has no visibility into what other services in your organization write to the same tables. If cross-repo collision detection is what you need, use Option B.
+
+Add to your workflow:
+
+```yaml
+- name: OmniGraph Architecture Scan
+  uses: harshal0508/OmniGraph@main
+  with:
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    fail_on_critical: 'false'   # recommended: comment-only mode first, opt into blocking later
+```
+
+Optionally enable AI severity enrichment (advisory text only — no code generation):
+
+```yaml
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    # or
+    google_api_key: ${{ secrets.GOOGLE_API_KEY }}
+```
+
+---
+
+### Option B — Self-hosted full engine (cross-repo detection)
+
+**What it does:** Everything in Option A, plus persistent cross-repo graph matching. When a PR touches a table that another service in a completely different repository already writes to, OmniGraph flags the collision — even across different languages, ORMs, and teams.
+
+**What it requires:** A persistent Neo4j instance reachable from wherever the listeners run (local server, VM, managed Neo4j Aura, etc.). This is an organizational infrastructure decision, not just a credential swap.
+
+**Prerequisites:** Docker, Python 3.10+, a GitHub PAT with Contents: read and Pull requests: read/write on all repos you want connected.
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/harshal0508/OmniGraph.git
 cd OmniGraph
 pip install -r requirements.txt
 
 cp .env.example .env
-# edit .env: set GITHUB_TOKEN, and OMNIGRAPH_REPOS as a JSON map of
-# "owner/repo": "service_id" for every repo you want connected
+# Edit .env:
+#   GITHUB_TOKEN   — your GitHub PAT
+#   OMNIGRAPH_REPOS — JSON map: {"owner/repo": "service_id", ...}
+#   NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD — your Neo4j instance
 
-docker-compose -f docker-compose.neo4j.yml up -d
+docker-compose -f docker-compose.neo4j.yml up -d   # or point at an existing instance
 ```
 
 **Run the components:**
 
 ```bash
-python -m core.eval.benchmark          # run the 28-case detection test suite
-python scripts/check_listener.py       # start the read-only PR-check daemon
-python scripts/merge_listener.py       # start the merge-triggered persistence daemon
-python scripts/merge_pr.py <repo-path> <service-id>   # manually ingest a repo state
+python -m core.eval.benchmark                        # verify the engine works (28 cases, no Neo4j needed)
+python scripts/merge_pr.py <repo-path> <service-id>  # bulk-ingest a repo into the graph
+python scripts/check_listener.py                     # PR-check daemon (read-only, polls configured repos)
+python scripts/merge_listener.py                     # merge-trigger daemon (updates graph on merge)
 ```
 
-All configuration is read from `.env` via `config.py` — no repo names, service IDs, or credentials are hardcoded in source. See `.env.example` for every variable and its expected format.
+All configuration is read from `.env` via `config.py` — no repo names, service IDs, or credentials are hardcoded in source. See `.env.example` for every required variable and its expected format.
 
 ## Proof of Work
 

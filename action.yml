@@ -1,12 +1,18 @@
-﻿name: 'OmniGraph Architecture Scan'
-description: 'Detects distributed race conditions and architectural hazards in your PRs.'
+name: 'OmniGraph Architecture Scan'
+description: >
+  Detects unsynchronized database writes and lock-mechanism mismatches within
+  a single repository — TOCTOU loops, missing distributed locks, non-idempotent
+  retries, and Redis non-atomic read-modify-write patterns. Posts findings as a
+  PR comment. For cross-repository detection across your organization (checking
+  one service's PR against another service's existing writes), see the full
+  self-hosted deployment guide in the README.
 branding:
   icon: 'shield'
   color: 'blue'
 
 inputs:
   path:
-    description: 'Path to scan'
+    description: 'Path to scan (defaults to repo root)'
     required: false
     default: '.'
   github_token:
@@ -14,14 +20,23 @@ inputs:
     required: true
     default: ${{ github.token }}
   fail_on_critical:
-    description: 'Fail the action if critical findings are detected'
+    description: >
+      Exit with code 1 (blocking merge) if critical findings are detected.
+      Defaults to false — recommended to run in comment-only mode first and
+      opt into blocking only after you have established a baseline false-positive
+      rate for your codebase.
     required: false
-    default: 'true'
+    default: 'false'
   anthropic_api_key:
-    description: 'Anthropic API key for AI Arbiter patches (Claude 3.5 Sonnet)'
+    description: >
+      Anthropic API key (Claude). If provided, the AI Arbiter will enrich
+      ambiguous findings with severity reasoning and suggested remediation
+      guidance. No code is generated or applied — output is advisory text only.
     required: false
   google_api_key:
-    description: 'Google API key for AI Arbiter patches (Gemini 1.5 Pro)'
+    description: >
+      Google API key (Gemini). Alternative to Anthropic for AI Arbiter severity
+      enrichment. Advisory text only — no code generation or application.
     required: false
 
 runs:
@@ -31,42 +46,42 @@ runs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        
-    - name: Install OmniGraph Dependencies
+
+    - name: Install OmniGraph dependencies
       shell: bash
       run: |
         python -m pip install --upgrade pip
         pip install -r ${{ github.action_path }}/requirements.txt
-        
-    - name: Run OmniGraph Scan
+
+    - name: Run OmniGraph scan
       shell: bash
       env:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
         GOOGLE_API_KEY: ${{ inputs.google_api_key }}
-        PYTHONUTF8: 1
+        PYTHONUTF8: '1'
       run: |
-        # Only run PR comment on pull_request events
         if [ "${{ github.event_name }}" = "pull_request" ]; then
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
           python ${{ github.action_path }}/main.py github-pr ${{ inputs.path }} \
-            --repo ${{ github.repository }} \
-            --pr $PR_NUMBER \
-            --token ${{ inputs.github_token }}
+            --repo "${{ github.repository }}" \
+            --pr "$PR_NUMBER" \
+            --token "${{ inputs.github_token }}"
         else
-          # Fallback to standard CLI scan for pushes
           python ${{ github.action_path }}/main.py scan ${{ inputs.path }}
         fi
-        
+
         EXIT_CODE=$?
-        
-        if [ "${{ inputs.fail_on_critical }}" = "true" ] && [ $EXIT_CODE -eq 1 ]; then
-          echo "::error::OmniGraph detected CRITICAL race conditions. Blocking merge."
-          exit 1
-        fi
-        
-        # Always exit 0 if fail_on_critical is false, unless it's a hard crash (exit 2)
+
+        # Hard crash (import error, missing dependency, etc.) — always surface it
         if [ $EXIT_CODE -eq 2 ]; then
+          echo "::error::OmniGraph encountered a fatal error. Check the logs above."
           exit 2
         fi
-        
+
+        # Critical findings found (exit 1) — only block if installer opted in
+        if [ $EXIT_CODE -eq 1 ] && [ "${{ inputs.fail_on_critical }}" = "true" ]; then
+          echo "::error::OmniGraph detected critical findings. Set fail_on_critical: 'false' to run in comment-only mode."
+          exit 1
+        fi
+
         exit 0
